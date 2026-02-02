@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bkk-futar-v1';
+const CACHE_NAME = 'bkk-planner-v1';
 const ASSETS = [
   './index.html',
   './manifest.json',
