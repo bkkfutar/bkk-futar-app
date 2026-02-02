@@ -58,7 +58,10 @@
 <div id="startScreen">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="mb-0"><i class="bi bi-person-badge me-2"></i>BKK Vezetői Felület</h2>
-        <a href="../index.html" class="btn btn-outline-light btn-sm">Kilépés</a>
+        <div>
+            <button id="installBtn" class="btn btn-warning btn-sm fw-bold me-2" style="display: none;"><i class="bi bi-download me-1"></i>App</button>
+            <a href="../index.html" class="btn btn-outline-light btn-sm">Kilépés</a>
+        </div>
     </div>
     <p class="text-secondary">Válassz egy útvonalat az indításhoz (a Tervezőben létrehozott útvonalak):</p>
     <div id="routeList" class="overflow-auto flex-grow-1"></div>
@@ -269,6 +272,26 @@
                 .catch(err => console.log('Service Worker registration failed: ', err));
         });
     }
+
+    // PWA Install Logic
+    let deferredPrompt;
+    const installBtn = document.getElementById('installBtn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.style.display = 'inline-block';
+    });
+
+    installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+            deferredPrompt = null;
+            installBtn.style.display = 'none';
+        }
+    });
 
 </script>
 </body>
