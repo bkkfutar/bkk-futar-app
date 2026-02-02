@@ -29,3 +29,19 @@ Ez az alkalmazás Progressive Web App (PWA) technológiát használ, így telep�
 - **Térkép:** Húzd és nagyítsd a térképet. A járművekre kattintva részleteket láthatsz.
 - **Monitor:** A jármű részleteinél kattints az "Utastájékoztató" gombra a teljes képernyős nézethez.
 - **Menetrend:** A jármű részleteinél kattints a "Menetrend és Késés" gombra.
+
+## Új Alkalmazások (Belső Használatra)
+
+Az eredeti alkalmazás mellett két új modul is elérhető:
+
+### 1. BKK Tervező (`/planner/`)
+Itt lehet saját, egyedi útvonalakat tervezni és megállókat rögzíteni a térképen.
+- Kattints a térképre megálló hozzáadásához.
+- Nevezd el az útvonalat és mentsd el.
+- Az itt létrehozott útvonalak megjelennek a Vezetői alkalmazásban.
+
+### 2. BKK Vezető (`/driver/`)
+Járművezetők számára készült felület (Monitor), amely a Tervezőben létrehozott útvonalakat használja.
+- Indításkor válaszd ki a mentett útvonalat.
+- A felület mutatja a következő megállót, a menetidőt és a térképet.
+- Az "Indulás" gombbal lehet léptetni a megállókat.

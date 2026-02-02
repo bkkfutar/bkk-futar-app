@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BKK Vezető</title>
+    <link rel="manifest" href="manifest.json">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" />
+    <style>
+        body { background-color: #000; color: white; font-family: 'Arial', sans-serif; overflow: hidden; height: 100vh; }
+
+        /* Start Screen */
+        #startScreen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #222; z-index: 2000; padding: 20px; display: flex; flex-direction: column; }
+        .route-card { background: #333; margin-bottom: 10px; padding: 20px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
+        .route-card:hover { border-color: #009933; background: #444; }
+
+        /* Main Interface */
+        .header-bar { height: 60px; background: #002673; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #444; }
+        .clock { font-size: 1.5rem; font-weight: bold; }
+
+        .main-container { display: flex; height: calc(100vh - 60px - 80px); } /* 80px footer */
+
+        .left-panel { width: 50%; padding: 30px; border-right: 1px solid #444; display: flex; flex-direction: column; justify-content: center; }
+        .right-panel { width: 50%; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        .next-stop-label { color: #aaa; text-transform: uppercase; font-size: 1.2rem; margin-bottom: 10px; }
+        .next-stop-name { font-size: 3.5rem; font-weight: bold; line-height: 1.1; margin-bottom: 20px; color: #fff; }
+
+        .stops-list-overlay {
+            position: absolute; top: 10px; right: 10px; bottom: 10px; width: 40%;
+            background: rgba(0,0,0,0.8); border-radius: 10px; padding: 10px; overflow-y: auto;
+            backdrop-filter: blur(5px); pointer-events: auto;
+        }
+
+        .stop-row { padding: 10px; border-bottom: 1px solid #444; display: flex; align-items: center; opacity: 0.5; }
+        .stop-row.active { opacity: 1; background: rgba(0, 153, 51, 0.3); font-weight: bold; border-left: 4px solid #009933; }
+        .stop-row.past { opacity: 0.3; }
+
+        .footer-bar { height: 80px; background: #111; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; border-top: 1px solid #333; }
+
+        .btn-control { height: 60px; font-size: 1.2rem; font-weight: bold; min-width: 150px; }
+
+        @media (max-width: 768px) {
+            .main-container { flex-direction: column; height: calc(100vh - 60px - 80px); }
+            .left-panel { width: 100%; height: 40%; padding: 15px; border-right: none; border-bottom: 1px solid #444; }
+            .right-panel { width: 100%; height: 60%; }
+            .next-stop-name { font-size: 2rem; }
+            .stops-list-overlay { display: none; } /* Hide list on mobile map to save space */
+        }
+    </style>
+</head>
+<body>
+
+<!-- Start Screen -->
+<div id="startScreen">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0"><i class="bi bi-person-badge me-2"></i>BKK Vezetői Felület</h2>
+        <a href="../index.html" class="btn btn-outline-light btn-sm">Kilépés</a>
+    </div>
+    <p class="text-secondary">Válassz egy útvonalat az indításhoz (a Tervezőben létrehozott útvonalak):</p>
+    <div id="routeList" class="overflow-auto flex-grow-1"></div>
+</div>
+
+<!-- Main Interface -->
+<div class="header-bar">
+    <div class="d-flex align-items-center">
+        <span class="badge bg-primary fs-5 me-3" id="routeNumber">999</span>
+        <span class="fs-4 fw-bold" id="routeDest">Célállomás</span>
+    </div>
+    <div class="clock" id="clock">12:00</div>
+</div>
+
+<div class="main-container">
+    <div class="left-panel">
+        <div class="next-stop-label" id="statusLabel">Következő megálló</div>
+        <div class="next-stop-name" id="mainStopName">...</div>
+
+        <div class="progress" style="height: 10px; background: #333;">
+            <div class="progress-bar bg-success" id="progressBar" style="width: 0%"></div>
+        </div>
+        <div class="d-flex justify-content-between text-secondary mt-1 small">
+            <span id="progressText">0%</span>
+            <span>Jármű: BKK-1234</span>
+        </div>
+    </div>
+    <div class="right-panel">
+        <div id="map"></div>
+        <div class="stops-list-overlay" id="stopsList">
+            <!-- Stops -->
+        </div>
+    </div>
+</div>
+
+<div class="footer-bar">
+    <div>
+        <button class="btn btn-outline-warning btn-control me-2" onclick="toggleDoor()"><i class="bi bi-door-open me-2"></i>Ajtó</button>
+        <button class="btn btn-outline-info btn-control" onclick="announce()"><i class="bi bi-megaphone me-2"></i>Bemond</button>
+    </div>
+    <div>
+        <button class="btn btn-success btn-control px-5" id="nextBtn" onclick="nextStop()">Indulás <i class="bi bi-arrow-right ms-2"></i></button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    // Clock
+    setInterval(() => {
+        document.getElementById('clock').textContent = new Date().toLocaleTimeString('hu-HU', {hour:'2-digit', minute:'2-digit'});
+    }, 1000);
+
+    // Load Routes
+    const savedRoutes = JSON.parse(localStorage.getItem('bkk_custom_routes') || '[]');
+    const routeListEl = document.getElementById('routeList');
+
+    if (savedRoutes.length === 0) {
+        routeListEl.innerHTML = '<div class="alert alert-warning">Nincs mentett útvonal! Kérlek hozz létre egyet a <strong>BKK Tervező</strong> alkalmazásban.</div>';
+    } else {
+        savedRoutes.forEach((route, idx) => {
+            const card = document.createElement('div');
+            card.className = 'route-card';
+
+            const title = document.createElement('h4');
+            title.className = 'mb-1 text-white';
+            title.textContent = route.name;
+
+            const sub = document.createElement('div');
+            sub.className = 'text-secondary';
+            sub.textContent = `${route.stops.length} megálló`;
+
+            card.appendChild(title);
+            card.appendChild(sub);
+
+            card.onclick = () => startRoute(idx);
+            routeListEl.appendChild(card);
+        });
+    }
+
+    let currentRoute = null;
+    let currentStopIndex = 0;
+    let map = null;
+    let vehicleMarker = null;
+    let routeLayer = null;
+
+    function initMap() {
+        if (map) return;
+        map = L.map('map', {zoomControl: false}).setView([47.4979, 19.0402], 13);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: 'OSM' }).addTo(map);
+    }
+
+    function startRoute(index) {
+        currentRoute = savedRoutes[index];
+        currentStopIndex = 0;
+
+        document.getElementById('startScreen').style.display = 'none';
+
+        // Setup UI
+        document.getElementById('routeNumber').textContent = currentRoute.name.split(' ')[0] || 'JÁRAT';
+        document.getElementById('routeDest').textContent = currentRoute.stops[currentRoute.stops.length - 1].name;
+
+        initMap();
+        drawRouteOnMap();
+        updateUI();
+    }
+
+    function drawRouteOnMap() {
+        const points = currentRoute.stops.map(s => [s.lat, s.lon]);
+
+        // Draw path
+        if (routeLayer) map.removeLayer(routeLayer);
+        routeLayer = L.polyline(points, {color: '#009933', weight: 6}).addTo(map);
+        map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+
+        // Draw Stops
+        currentRoute.stops.forEach((stop, i) => {
+            L.circleMarker([stop.lat, stop.lon], {
+                radius: 6, color: '#fff', fillColor: '#000', fillOpacity: 1
+            }).addTo(map);
+        });
+    }
+
+    function updateUI() {
+        const total = currentRoute.stops.length;
+        const currentStop = currentRoute.stops[currentStopIndex];
+
+        // Main Label
+        if (currentStopIndex >= total) {
+            document.getElementById('statusLabel').textContent = "JÁRAT VÉGE";
+            document.getElementById('mainStopName').textContent = "Végállomás";
+            document.getElementById('nextBtn').disabled = true;
+            document.getElementById('nextBtn').textContent = "Vége";
+            return;
+        }
+
+        document.getElementById('mainStopName').textContent = currentStop.name;
+
+        // Progress
+        const pct = Math.round((currentStopIndex / (total - 1)) * 100);
+        document.getElementById('progressBar').style.width = `${pct}%`;
+        document.getElementById('progressText').textContent = `${pct}%`;
+
+        // List
+        const listEl = document.getElementById('stopsList');
+        listEl.innerHTML = '';
+        currentRoute.stops.forEach((stop, i) => {
+            const div = document.createElement('div');
+            let classes = 'stop-row';
+            if (i === currentStopIndex) classes += ' active';
+            if (i < currentStopIndex) classes += ' past';
+            div.className = classes;
+
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-circle-fill me-2';
+            icon.style.fontSize = '8px';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = stop.name;
+
+            div.appendChild(icon);
+            div.appendChild(nameSpan);
+
+            listEl.appendChild(div);
+
+            if (i === currentStopIndex) {
+                div.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+
+        // Map Marker
+        if (vehicleMarker) map.removeLayer(vehicleMarker);
+        vehicleMarker = L.marker([currentStop.lat, currentStop.lon], {
+            icon: L.divIcon({
+                className: 'vehicle-icon',
+                html: '<div style="background:#009933; border: 2px solid white; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 0 10px #00ff00;"></div>',
+                iconSize: [20, 20]
+            })
+        }).addTo(map);
+        map.setView([currentStop.lat, currentStop.lon], 16);
+    }
+
+    function nextStop() {
+        currentStopIndex++;
+        updateUI();
+    }
+
+    function toggleDoor() {
+        alert('Ajtók nyitva/zárva!');
+    }
+
+    function announce() {
+        const stop = currentRoute.stops[currentStopIndex];
+        if (stop) {
+            // Simple TTS
+            const text = "A következő megálló: " + stop.name;
+            const ut = new SpeechSynthesisUtterance(text);
+            ut.lang = 'hu-HU';
+            speechSynthesis.speak(ut);
+        }
+    }
+
+</script>
+</body>
+</html>
