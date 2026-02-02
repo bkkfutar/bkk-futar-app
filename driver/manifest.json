@@ -1,6 +1,6 @@
 {
-  "name": "BKK Futár Élő",
-  "short_name": "BKK Élő",
+  "name": "BKK Vezető",
+  "short_name": "Vezető",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
