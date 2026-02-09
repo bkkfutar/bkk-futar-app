@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BKK Tervező</title>
+    <link rel="manifest" href="manifest.json">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .navbar { z-index: 1000; }
+        .content-wrapper { display: flex; flex: 1; overflow: hidden; position: relative; }
+        #sidebar { width: 350px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; z-index: 999; overflow-y: auto; transition: transform 0.3s; }
+        #map { flex: 1; z-index: 1; }
+
+        .stop-item {
+            background: #f8f9fa; border: 1px solid #dee2e6; margin-bottom: 8px; padding: 10px; border-radius: 6px;
+            cursor: move; display: flex; align-items: center; justify-content: space-between;
+        }
+        .stop-item:hover { background: #e9ecef; }
+        .stop-badge { background: #009933; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem; margin-right: 10px; }
+
+        .btn-fab {
+            position: absolute; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 1000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        @media (max-width: 768px) {
+            #sidebar { position: absolute; top: 0; bottom: 0; left: 0; width: 85%; transform: translateX(-100%); }
+            #sidebar.open { transform: translateX(0); box-shadow: 2px 0 10px rgba(0,0,0,0.2); }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-success shadow-sm">
+    <div class="container-fluid">
+        <button class="btn btn-outline-light me-2 d-md-none" id="toggleSidebar"><i class="bi bi-list"></i></button>
+        <span class="navbar-brand mb-0 h1"><i class="bi bi-map me-2"></i>BKK Tervező</span>
+        <div class="d-flex align-items-center">
+            <button id="installBtn" class="btn btn-warning btn-sm fw-bold me-2" style="display: none;"><i class="bi bi-download me-1"></i>App</button>
+            <button class="btn btn-light btn-sm text-success fw-bold" onclick="createNewRoute()">Új Terv</button>
+            <a href="../index.html" class="btn btn-outline-light btn-sm ms-2">Kilépés</a>
+        </div>
+    </div>
+</nav>
+
+<div class="content-wrapper">
+    <div id="sidebar" class="p-3">
+        <div class="mb-4">
+            <label class="form-label fw-bold">Járatszám / Útvonal neve</label>
+            <input type="text" class="form-control form-control-lg mb-2" id="routeName" placeholder="Pl. 999 - Teszt Járat">
+            <div class="text-muted small mb-2">Adj hozzá megállókat a térképre kattintva!</div>
+        </div>
+
+        <h6 class="text-uppercase text-muted fw-bold small">Megállók listája</h6>
+        <div id="stopsList" class="flex-grow-1 mb-3">
+            <div class="text-center text-muted p-4">Még nincs megálló hozzáadva.</div>
+        </div>
+
+        <div class="d-grid gap-2 mt-auto">
+            <button class="btn btn-success btn-lg" onclick="saveRoute()"><i class="bi bi-save me-2"></i>Mentés</button>
+            <button class="btn btn-secondary" onclick="clearCurrentRoute()"><i class="bi bi-trash me-2"></i>Törlés</button>
+        </div>
+
+        <div class="mt-4 pt-3 border-top">
+            <h6 class="text-uppercase text-muted fw-bold small">Mentett Útvonalak</h6>
+            <div id="savedRoutesList" class="list-group list-group-flush"></div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+</div>
+
+<!-- Modal for Stop Name -->
+<div class="modal fade" id="stopNameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Megálló Neve</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="newStopName" class="form-control" placeholder="Pl. Fő tér" autofocus>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary w-100" id="confirmStopBtn">Hozzáadás</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    // Init Map
+    const map = L.map('map').setView([47.4979, 19.0402], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: 'OSM' }).addTo(map);
+
+    let currentStops = [];
+    let markers = [];
+    let routePolyline = null;
+    let tempLatLng = null;
+
+    const stopNameModal = new bootstrap.Modal(document.getElementById('stopNameModal'));
+    const newStopNameInput = document.getElementById('newStopName');
+
+    // Load saved routes on start
+    loadSavedRoutes();
+
+    // Map Click -> Add Stop
+    map.on('click', (e) => {
+        tempLatLng = e.latlng;
+        newStopNameInput.value = '';
+        stopNameModal.show();
+        setTimeout(() => newStopNameInput.focus(), 500);
+    });
+
+    document.getElementById('confirmStopBtn').addEventListener('click', () => {
+        const name = newStopNameInput.value.trim() || 'Névtelen megálló';
+        addStop(tempLatLng, name);
+        stopNameModal.hide();
+    });
+
+    // Add Stop logic
+    function addStop(latlng, name) {
+        const stop = {
+            id: Date.now(),
+            name: name,
+            lat: latlng.lat,
+            lon: latlng.lng
+        };
+        currentStops.push(stop);
+        renderStops();
+    }
+
+    function renderStops() {
+        // Clear map markers
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+        if (routePolyline) map.removeLayer(routePolyline);
+
+        const listEl = document.getElementById('stopsList');
+        listEl.innerHTML = '';
+
+        if (currentStops.length === 0) {
+            listEl.innerHTML = '<div class="text-center text-muted p-4">Még nincs megálló hozzáadva.</div>';
+            return;
+        }
+
+        const points = [];
+        currentStops.forEach((stop, index) => {
+            // Add Marker
+            const marker = L.marker([stop.lat, stop.lon], {
+                icon: L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="background-color:#009933;color:white;border-radius:50%;width:24px;height:24px;text-align:center;font-weight:bold;line-height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.5);">${index + 1}</div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                })
+            }).addTo(map);
+            markers.push(marker);
+            points.push([stop.lat, stop.lon]);
+
+            // Add to List
+            const item = document.createElement('div');
+            item.className = 'stop-item';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'd-flex align-items-center';
+
+            const badge = document.createElement('span');
+            badge.className = 'stop-badge';
+            badge.textContent = index + 1;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'fw-bold text-truncate';
+            nameSpan.style.maxWidth = '180px';
+            nameSpan.textContent = stop.name;
+
+            contentDiv.appendChild(badge);
+            contentDiv.appendChild(nameSpan);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn btn-sm btn-outline-danger border-0';
+            removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>'; // Icon is safe
+            removeBtn.onclick = () => removeStop(index);
+
+            item.appendChild(contentDiv);
+            item.appendChild(removeBtn);
+
+            listEl.appendChild(item);
+        });
+
+        // Draw Line
+        if (points.length > 1) {
+            routePolyline = L.polyline(points, {color: '#009933', weight: 4}).addTo(map);
+        }
+    }
+
+    window.removeStop = function(index) {
+        currentStops.splice(index, 1);
+        renderStops();
+    };
+
+    window.saveRoute = function() {
+        const name = document.getElementById('routeName').value.trim();
+        if (!name) return alert('Adj nevet az útvonalnak!');
+        if (currentStops.length < 2) return alert('Adj hozzá legalább 2 megállót!');
+
+        const route = {
+            id: 'custom_' + Date.now(),
+            name: name,
+            stops: currentStops,
+            createdAt: new Date().toISOString()
+        };
+
+        const saved = JSON.parse(localStorage.getItem('bkk_custom_routes') || '[]');
+        saved.push(route);
+        localStorage.setItem('bkk_custom_routes', JSON.stringify(saved));
+
+        alert('Útvonal mentve!');
+        loadSavedRoutes();
+        clearCurrentRoute();
+    };
+
+    window.clearCurrentRoute = function() {
+        document.getElementById('routeName').value = '';
+        currentStops = [];
+        renderStops();
+    };
+
+    window.createNewRoute = function() {
+        clearCurrentRoute();
+        document.getElementById('routeName').focus();
+    };
+
+    function loadSavedRoutes() {
+        const list = document.getElementById('savedRoutesList');
+        list.innerHTML = '';
+        const saved = JSON.parse(localStorage.getItem('bkk_custom_routes') || '[]');
+
+        if (saved.length === 0) {
+            list.innerHTML = '<div class="text-center text-muted small p-2">Nincs mentett útvonal.</div>';
+            return;
+        }
+
+        saved.forEach((route, idx) => {
+            const item = document.createElement('div'); // Changed from button to div to avoid nesting issues with inner buttons
+            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+            item.style.cursor = 'pointer';
+            item.onclick = () => loadRoute(idx);
+
+            const infoDiv = document.createElement('div');
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'fw-bold';
+            nameDiv.textContent = route.name;
+
+            const metaSmall = document.createElement('small');
+            metaSmall.className = 'text-muted';
+            metaSmall.textContent = `${route.stops.length} megálló`;
+
+            infoDiv.appendChild(nameDiv);
+            infoDiv.appendChild(metaSmall);
+
+            const btnGroup = document.createElement('div');
+            btnGroup.className = 'btn-group btn-group-sm';
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn btn-outline-primary';
+            editBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+            editBtn.onclick = (e) => { e.stopPropagation(); loadRoute(idx); };
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-outline-danger';
+            delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            delBtn.onclick = (e) => { e.stopPropagation(); deleteRoute(idx); };
+
+            btnGroup.appendChild(editBtn);
+            btnGroup.appendChild(delBtn);
+
+            item.appendChild(infoDiv);
+            item.appendChild(btnGroup);
+
+            list.appendChild(item);
+        });
+    }
+
+    window.loadRoute = function(index) {
+        const saved = JSON.parse(localStorage.getItem('bkk_custom_routes') || '[]');
+        const route = saved[index];
+        if (route) {
+            document.getElementById('routeName').value = route.name;
+            currentStops = route.stops; // Deep copy suggested if we want to avoid ref issues, but simple assign is ok here
+            renderStops();
+
+            // Zoom to bounds
+            if (currentStops.length > 0) {
+                const bounds = L.latLngBounds(currentStops.map(s => [s.lat, s.lon]));
+                map.fitBounds(bounds, {padding: [50, 50]});
+            }
+
+            // For mobile sidebar
+            if (window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.remove('open');
+            }
+        }
+    };
+
+    window.deleteRoute = function(index) {
+        if(!confirm('Biztosan törlöd?')) return;
+        const saved = JSON.parse(localStorage.getItem('bkk_custom_routes') || '[]');
+        saved.splice(index, 1);
+        localStorage.setItem('bkk_custom_routes', JSON.stringify(saved));
+        loadSavedRoutes();
+    };
+
+    // Sidebar Toggle for Mobile
+    document.getElementById('toggleSidebar').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('Service Worker registered: ', reg.scope))
+                .catch(err => console.log('Service Worker registration failed: ', err));
+        });
+    }
+
+    // PWA Install Logic
+    let deferredPrompt;
+    const installBtn = document.getElementById('installBtn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.style.display = 'block';
+    });
+
+    installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+            deferredPrompt = null;
+            installBtn.style.display = 'none';
+        }
+    });
+
+</script>
+</body>
+</html>
